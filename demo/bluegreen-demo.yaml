@@ -1,0 +1,49 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: bluegreen-demo
+  namespace: poc-rollouts
+spec:
+  replicas: 5
+  strategy:
+    blueGreen:
+      activeService: bluegreen-demo-active
+      previewService: bluegreen-demo-preview
+      autoPromotionEnabled: false
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: bluegreen-demo
+      namespace: poc-rollouts
+  template:
+    metadata:
+      labels:
+        app: bluegreen-demo
+        namespace: poc-rollouts
+    spec:
+      containers:
+        - name: bluegreen-demo
+          image: argoproj/rollouts-demo:blue
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          resources:
+            requests:
+              memory: 32Mi
+              cpu: 5m
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bluegreen-demo
+  namespace: poc-rollouts
+spec:
+  ports:
+    - port: 80
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app: bluegreen-demo
+    namespace: poc-rollouts
