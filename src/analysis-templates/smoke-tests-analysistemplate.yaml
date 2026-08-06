@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: smoke-tests
+spec:
+  args:
+    - name: service-name
+  metrics:
+    - name: smoke-tests
+      provider:
+        job:
+          spec:
+            backoffLimit: 0
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: smoke-tests
+                    image: curlimages/curl:8.10.1
+                    command: ['sh', '-c']
+                    args:
+                      - 'curl -sf http://{{args.service-name}}/ready'

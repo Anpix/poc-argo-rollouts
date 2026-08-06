@@ -1,0 +1,95 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: deployment-demo
+  namespace: load-test
+spec:
+  replicas: 5
+  strategy:
+    blueGreen:
+      activeService: deployment-demo
+      previewService: deployment-demo-preview
+      prePromotionAnalysis:
+        templates:
+          - templateName: smoke-tests
+        args:
+          - name: service-name
+            value: deployment-demo-preview.load-test.svc.cluster.local
+      postPromotionAnalysis:
+        templates:
+          - templateName: smoke-tests
+        args:
+          - name: service-name
+            value: deployment-demo-preview.load-test.svc.cluster.local
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: deployment-demo
+      namespace: load-test
+  template:
+    metadata:
+      labels:
+        app: deployment-demo
+        namespace: load-test
+    spec:
+      containers:
+        - name: deployment-demo
+          image: python:3.12-alpine
+          command: ['/bin/sh', '-c']
+          args:
+            - |
+              mkdir -p /www
+              echo "{\"version\":\"$APP_VERSION\",\"pod\":\"$POD_NAME\"}" > /www/index.html
+              (sleep 10 && touch /www/ready) &
+              exec python3 -m http.server 8080 --directory /www
+          env:
+            - name: APP_VERSION
+              value: 'blue'
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 2
+            failureThreshold: 1
+          resources:
+            requests:
+              memory: 32Mi
+              cpu: 5m
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: deployment-demo
+  namespace: load-test
+spec:
+  ports:
+    - port: 80
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app: deployment-demo
+    namespace: load-test
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: deployment-demo-preview
+  namespace: load-test
+spec:
+  ports:
+    - port: 80
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app: deployment-demo
+    namespace: load-test

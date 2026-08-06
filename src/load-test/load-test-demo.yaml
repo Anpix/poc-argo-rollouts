@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load-test-demo
+  namespace: load-test
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: load-test-demo
+      namespace: load-test
+  template:
+    metadata:
+      labels:
+        app: load-test-demo
+        namespace: load-test
+    spec:
+      containers:
+        - name: fortio
+          image: fortio/fortio:latest
+          args:
+            - load
+            - -c=8
+            - -qps=20
+            - -t=15s
+            - http://deployment-demo.load-test.svc.cluster.local/
+          resources:
+            requests:
+              memory: 32Mi
+              cpu: 10m
