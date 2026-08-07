@@ -1,28 +1,28 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
-  name: deployment-demo-rollout
+  name: migrate
   namespace: poc-rollouts
 spec:
   replicas: 5
   selector:
     matchLabels:
-      app: deployment-demo
+      app: migrate
       namespace: poc-rollouts
   workloadRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: deployment-demo
+    name: migrate
     scaleDown: onsuccess
   strategy:
     blueGreen:
-      activeService: deployment-demo
-      previewService: deployment-demo-preview
+      activeService: migrate
+      previewService: migrate-preview
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: deployment-demo-preview
+  name: migrate-preview
   namespace: poc-rollouts
 spec:
   ports:
@@ -31,5 +31,5 @@ spec:
       protocol: TCP
       name: http
   selector:
-    app: deployment-demo
+    app: migrate
     namespace: poc-rollouts

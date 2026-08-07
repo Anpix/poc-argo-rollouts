@@ -25,7 +25,7 @@ kubectl argo rollouts get rollout bluegreen-demo -n poc-rollouts --watch
 **Update** the rollout image:
 
 ```sh
-kubectl argo rollouts -n poc-rollouts set image bluegreen-demo bluegreen-demo=argoproj/rollouts-demo:yellow
+kubectl argo rollouts -n poc-rollouts set image bluegreen-demo bluegreen-demo=argoproj/rollouts-demo:green
 ```
 
 ## Debug

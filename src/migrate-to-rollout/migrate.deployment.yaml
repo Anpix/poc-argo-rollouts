@@ -1,23 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: deployment-demo
+  name: migrate
   namespace: poc-rollouts
 spec:
   replicas: 5
   revisionHistoryLimit: 2
   selector:
     matchLabels:
-      app: deployment-demo
+      app: migrate
       namespace: poc-rollouts
   template:
     metadata:
       labels:
-        app: deployment-demo
+        app: migrate
         namespace: poc-rollouts
     spec:
       containers:
-        - name: deployment-demo
+        - name: migrate
           image: argoproj/rollouts-demo:blue
           ports:
             - name: http
@@ -31,7 +31,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: deployment-demo
+  name: migrate
   namespace: poc-rollouts
 spec:
   ports:
@@ -40,5 +40,5 @@ spec:
       protocol: TCP
       name: http
   selector:
-    app: deployment-demo
+    app: migrate
     namespace: poc-rollouts
