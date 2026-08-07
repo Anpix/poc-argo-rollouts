@@ -36,27 +36,29 @@ If you need to change the values, edit the `args` list in the [load-test-demo.ya
 
 > The `fortio/fortio` image has no shell, so the container can't loop on its own. Each `fortio load` run exits after `-t` elapses; the pod's `restartPolicy: Always` restarts the container automatically for the next cycle. Note that the kubelet applies an increasing back-off delay (10s, 20s, 40s, ...) between restarts, so the gap between cycles grows over time instead of staying fixed.
 
-**Apply** to create the `load-test-demo` app:
+**Run Test Job** using the commands to:
+
+- delete previous jobs, if exists;
+- create a new `load-test-k6` job;
+- wait for the task to be done;
+- save restults to log;
 
 ```sh
-kubectl apply -n load-test -f src/load-test/load-test-demo.yaml
-```
-
-**Watch** the application logs using:
-
-```sh
-kubectl logs -n load-test -f deploy/load-test-demo | tee "src/load-test/load-test-$(date +%Y%m%d-%H)h.log"
+kubectl delete job k6-load-test -n load-test --ignore-not-found
+kubectl apply -n load-test -f src/load-test/load-test-k6.yaml
+kubectl wait --for=condition=Ready pod -l job-name=k6-load-test -n load-test --timeout=60s
+kubectl logs -n load-test -f job/k6-load-test | tee "src/load-test/load-test-$(date +%Y%m%d-%H%M).log"
 ```
 
 **Rollout** a new vcersion with the new `APP_VERSION` value:
 
 ```sh
 kubectl patch rollout deployment-demo -n load-test --type='json' -p='[{"op":"replace","path":"/spec/template/spec/containers/0/env/0/value","value":"green"}]'
-
 ```
 
 ## Rollback
 
 ```sh
-kubectl delete -n load-test -f src/load-test/deployment-demo.yaml
+kubectl delete -n load-test -f src/load-test/deployment-demo.yaml --ignore-not-found
+kubectl delete -n load-test -f src/load-test/load-test-k6.yaml --ignore-not-found
 ```

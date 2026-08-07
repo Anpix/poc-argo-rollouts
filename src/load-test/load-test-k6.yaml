@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k6-load-test-script
+  namespace: load-test
+data:
+  test.js: |
+    import http from 'k6/http';
+
+    export const options = {
+      vus: 25,
+      duration: '60s',
+    };
+
+    export default function () {
+      const reqStart = new Date().toISOString();
+      const res = http.get('http://deployment-demo.load-test.svc.cluster.local:7001/', { timeout: '5s' });
+      console.log(JSON.stringify({ req_start: reqStart, server: JSON.parse(res.body) }));
+    }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: k6-load-test
+  namespace: load-test
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: k6-load-test
+        namespace: load-test
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: k6
+          image: grafana/k6:latest
+          args: ['run', '/scripts/test.js']
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 100m
+      volumes:
+        - name: script
+          configMap:
+            name: k6-load-test-script

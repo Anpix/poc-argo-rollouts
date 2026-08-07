@@ -24,7 +24,7 @@ spec:
             - -c=8
             - -qps=20
             - -t=15s
-            - http://deployment-demo.load-test.svc.cluster.local/
+            - http://deployment-demo.load-test.svc.cluster.local:7001/
           resources:
             requests:
               memory: 32Mi
