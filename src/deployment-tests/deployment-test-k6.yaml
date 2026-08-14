@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: deployment-test-k6-script
+  namespace: deployment-tests
+data:
+  test.js: |
+    import http from 'k6/http';
+    import { check } from 'k6';
+
+    const rate = Number(__ENV.RATE) || 10;
+
+    export const options = {
+      scenarios: {
+        default: {
+          executor: 'constant-arrival-rate',
+          rate: rate,
+          timeUnit: '1s',
+          duration: __ENV.DURATION || '30s',
+          preAllocatedVUs: rate,
+          maxVUs: rate * 10,
+        },
+      },
+      thresholds: {
+        checks: ['rate==1.0'],
+      },
+    };
+
+    export default function () {
+      const reqStart = new Date().toISOString();
+      const res = http.get(__ENV.TEST_URL, { timeout: __ENV.TIMEOUT });
+
+      const ok = check(res, {
+        'status is 2xx': (r) => r.status >= 200 && r.status < 300,
+      });
+
+      if (!ok) {
+        console.log(JSON.stringify({
+          req_start: reqStart,
+          status: res.status,
+          error: 'non-2xx response',
+          body: (res.body || '').slice(0, 200),
+        }));
+        return;
+      }
+
+      // some services return a plain-text body (e.g. a bare version string)
+      // instead of JSON — that's still a successful response, just log it as-is
+      let body;
+      try {
+        body = JSON.parse(res.body);
+      } catch (e) {
+        body = res.body;
+      }
+
+      console.log(JSON.stringify({ req_start: reqStart, status: res.status, body }));
+    }

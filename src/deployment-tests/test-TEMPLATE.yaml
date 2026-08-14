@@ -1,0 +1,45 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: $JOB_NAME
+  namespace: deployment-tests
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: $JOB_NAME
+        namespace: deployment-tests
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: k6
+          image: grafana/k6:latest
+          command: ['/bin/sh', '-c']
+          args:
+            - k6 run --include-system-env-vars --log-output=file=/logs/$JOB_NAME-$(date +%Y%m%d-%H%M).log /scripts/test.js
+          env:
+            - name: TEST_URL
+              value: $TEST_URL
+            - name: TIMEOUT
+              value: $TIMEOUT
+            - name: RATE
+              value: "$RATE"
+            - name: DURATION
+              value: $DURATION
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+            - name: logs
+              mountPath: /logs
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 100m
+      volumes:
+        - name: script
+          configMap:
+            name: deployment-test-k6-script
+        - name: logs
+          persistentVolumeClaim:
+            claimName: deployment-tests-logs-pvc
