@@ -83,9 +83,24 @@ Examples:
 # poc-demo through the internal DNS, skipping the ALB
 ./src/eks/poc-test/poc-test-run.sh poc-test-internal http://poc-demo.load-test.svc.cluster.local/ 5s 20 300s
 
+# poc-demo with slow requests (each one held for 3s), to keep requests in flight during the promotion
+./src/eks/poc-test/poc-test-run.sh poc-test-delay "http://$ALB/?delay=3000" 10s 100 60s
+
 # any other address
 ./src/eks/poc-test/poc-test-run.sh poc-test-7vote https://my-address/api/version 20s 100 30s
 ```
+
+`poc-demo` accepts `?delay=<ms>` on any path except the health checks: it
+waits that long before answering (an invalid value returns 400). Keep the
+`timeout` above the delay. k6 still starts a request every `1/rate` seconds,
+so about `rate × delay` requests are in flight at once. The k6 script reads
+the `delay` from the URL and allocates `rate × (delay + 1s)` VUs up front
+(e.g. 100 × 4s = 400), so it doesn't drop requests while creating VUs.
+
+`poc-demo` keeps connections open between requests (HTTP/1.1 keep-alive), like
+api-7vote in prod. To compare with a connection per request (HTTP/1.0), set
+`KEEP_ALIVE` to `false` in [poc-demo.yaml](poc-demo.yaml) and apply it before
+the test (it's a template change, so it triggers a rollout).
 
 The script:
 

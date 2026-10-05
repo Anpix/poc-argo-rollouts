@@ -13,6 +13,13 @@ data:
 
     const rate = Number(__ENV.RATE) || 10;
 
+    // Each request takes about the ?delay of the URL (poc-demo only), so about
+    // rate × delay requests are in flight at once. Allocating these VUs up front
+    // (+1s of margin) avoids dropped iterations while k6 creates them mid-test.
+    const delayMatch = /[?&]delay=(\d+)/.exec(__ENV.TEST_URL || '');
+    const delaySeconds = delayMatch ? Number(delayMatch[1]) / 1000 : 0;
+    const preAllocatedVUs = Math.ceil(rate * (delaySeconds + 1));
+
     export const options = {
       scenarios: {
         default: {
@@ -20,8 +27,8 @@ data:
           rate: rate,
           timeUnit: '1s',
           duration: __ENV.DURATION || '30s',
-          preAllocatedVUs: rate,
-          maxVUs: rate * 10,
+          preAllocatedVUs: preAllocatedVUs,
+          maxVUs: Math.max(rate * 10, preAllocatedVUs * 2),
         },
       },
       thresholds: {

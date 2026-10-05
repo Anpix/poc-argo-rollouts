@@ -44,9 +44,16 @@ spec:
               import http.server
               import json
               import os
+              import time
               from datetime import datetime, timezone
+              from urllib.parse import parse_qs, urlparse
 
               class Handler(http.server.BaseHTTPRequestHandler):
+                  # HTTP/1.1 keeps the connection open between requests, like Kestrel in prod;
+                  # HTTP/1.0 (the Python default) closes it after each response. With keep-alive
+                  # every response needs a Content-Length, or the client waits for the close.
+                  protocol_version = 'HTTP/1.1' if os.environ.get('KEEP_ALIVE') == 'true' else 'HTTP/1.0'
+
                   def do_GET(self):
                       # ALB health check, same answer as api-7vote in prod: 200, empty body, no cache
                       if self.path == '/_Healthcheck/balancer':
@@ -59,8 +66,18 @@ spec:
                       if self.path == '/ready':
                           code = 200 if os.path.exists('/www/ready') else 503
                           self.send_response(code)
+                          self.send_header('Content-Length', '0')
                           self.end_headers()
                           return
+                      # ?delay=<ms> holds the response, to keep requests in flight during a promotion
+                      try:
+                          delay_ms = int(parse_qs(urlparse(self.path).query).get('delay', ['0'])[0])
+                      except ValueError:
+                          self.send_response(400)
+                          self.send_header('Content-Length', '0')
+                          self.end_headers()
+                          return
+                      time.sleep(max(delay_ms, 0) / 1000)
                       body = json.dumps({
                           'version': os.environ.get('APP_VERSION'),
                           'pod': os.environ.get('POD_NAME'),
@@ -85,6 +102,9 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            # 'true' keeps connections open between requests (HTTP/1.1), same as api-7vote in prod
+            - name: KEEP_ALIVE
+              value: 'true'
           ports:
             - name: http
               containerPort: 8080
