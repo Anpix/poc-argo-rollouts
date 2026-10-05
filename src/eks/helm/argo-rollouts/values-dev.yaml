@@ -1,0 +1,38 @@
+# Values para o chart oficial argo/argo-rollouts, para uso no k8-acms-dev.
+#
+# Diferente do KEDA, o Argo Rollouts ainda NÃO está instalado em nenhum dos
+# clusters (ver docs/argo-rollouts-compatibility-plan.md) — hoje o repo usa
+# `kubectl apply -f install.yaml` direto (docs/setup.md), sem Helm. Este
+# values.yaml troca isso por uma instalação via Helm, mantendo o mesmo
+# namespace (`argo-rollouts`) já usado nas instructions e nos manifests em
+# src/basic/ e src/migrate-to-rollout/.
+#
+# Compatibilidade (ver plano): a matriz de CI do Argo Rollouts (branch
+# release-1.9 estável / master 1.10 RC) testa até K8s 1.35 — o cluster dev
+# está em 1.36, fora dessa janela. Não é bloqueio confirmado, mas é uma
+# combinação não homologada; acompanhar os passos 3-5 do plano ao validar.
+#
+# Fixe a versão do chart explicitamente (`version` no helmfile.yaml) em
+# vez de deixar "latest" implícito, para manter rastreabilidade de qual
+# release foi validada contra o K8s 1.36 do dev.
+
+controller:
+  replicas: 1
+
+  # Mesma pegada dos requests/limits usados no restante do POC
+  # (src/deployment-tests, src/load-test) — ajuste depois de rodar os
+  # testes de carga do plano (passo 4) se o controller precisar de mais.
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+dashboard:
+  enabled: false   # habilite se o time quiser o dashboard web do Argo Rollouts
+
+notifications:
+  secret:
+    create: false  # sem integrações de notificação configuradas no POC ainda

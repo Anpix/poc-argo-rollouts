@@ -1,0 +1,42 @@
+# Argo Rollouts no cluster do POC. Separado do helmfile base
+# (../helmfile.yaml, metrics-server + KEDA) porque o dev não tem Argo
+# Rollouts: primeiro sobe o ambiente igual ao dev, depois instala este.
+#
+# Uso (ver ../argo-rollouts-instructions.md):
+#   helmfile -f src/eks/helm/argo-rollouts/helmfile.yaml diff
+#   helmfile -f src/eks/helm/argo-rollouts/helmfile.yaml apply
+
+helmDefaults:
+  # Todos os releases vão para este contexto, independente do contexto atual
+  # do kubectl.
+  kubeContext: k8-acms-poc
+  createNamespace: true
+  wait: true
+  timeout: 600
+
+repositories:
+  - name: argo
+    url: https://argoproj.github.io/argo-helm
+
+releases:
+  - name: argo-rollouts
+    namespace: argo-rollouts
+    chart: argo/argo-rollouts
+    version: 2.41.1 # Argo Rollouts v1.9.1 (não instalado no dev)
+    values:
+      - values-dev.yaml
+    hooks:
+      # Trava de segurança: antes de qualquer comando, confere se o contexto
+      # k8-acms-poc aponta mesmo para o cluster k8-acms-poc, para nunca
+      # instalar nada no k8-acms-dev/k8-acms-prod por engano.
+      - events: ["prepare"]
+        showlogs: true
+        command: bash
+        args:
+          - -c
+          - |
+            arn="$(kubectl config view -o jsonpath='{.contexts[?(@.name=="k8-acms-poc")].context.cluster}')"
+            if [[ "$arn" != */k8-acms-poc ]]; then
+              echo "Contexto 'k8-acms-poc' ausente ou apontando para '$arn'. Abortando." >&2
+              exit 1
+            fi

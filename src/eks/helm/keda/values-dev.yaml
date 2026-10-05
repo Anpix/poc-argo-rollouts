@@ -1,0 +1,60 @@
+# Values para o chart oficial kedacore/keda, alinhadas ao que já roda no
+# k8-acms-dev hoje (18/08/2026):
+#
+#   namespace: keda
+#   chart:     keda-2.19.0
+#   app:       2.19.0   (labels do CRD scaledobjects.keda.sh)
+#
+# O chart kedacore/keda versiona o chart em lockstep com o app version
+# (chart 2.19.0 => KEDA 2.19.0), então basta fixar `version: 2.19.0` no
+# ../helmfile.yaml para reproduzir a versão atual.
+#
+# IMPORTANT: o usuário usado para levantar este plano só tem permissão de
+# `get/list` em `namespaces` e `customresourcedefinitions` no cluster (sem
+# acesso a `deployments`/`secrets`), então não foi possível ler o
+# `helm get values` real do release em produção nem os requests/limits,
+# replicaCount ou watchNamespace efetivos do operator/webhook hoje.
+# Os valores abaixo são os defaults do chart 2.19.0 — ajuste conforme o que
+# for confirmado com quem tem acesso mais amplo ao cluster antes de tratar
+# isto como réplica fiel do release existente.
+
+# --- confirmado a partir do cluster ---
+image:
+  keda:
+    tag: "2.19.0"
+  metricsApiServer:
+    tag: "2.19.0"
+  webhooks:
+    tag: "2.19.0"
+
+# --- defaults do chart, não confirmados no cluster real ---
+watchNamespace: ""   # "" = cluster-wide (default do chart)
+
+resources:
+  operator:
+    limits:
+      cpu: 1
+      memory: 1000Mi
+    requests:
+      cpu: 100m
+      memory: 100Mi
+  metricServer:
+    limits:
+      cpu: 1
+      memory: 1000Mi
+    requests:
+      cpu: 100m
+      memory: 100Mi
+  webhooks:
+    limits:
+      cpu: 1
+      memory: 1000Mi
+    requests:
+      cpu: 100m
+      memory: 100Mi
+
+# No chart 2.19.0 o PDB é configurado por componente; {} (default) = sem PDB.
+podDisruptionBudget:
+  operator: {}
+  metricServer: {}
+  webhooks: {}

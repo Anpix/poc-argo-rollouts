@@ -1,0 +1,55 @@
+# metrics-server e KEDA no cluster do POC, com as versões alinhadas ao
+# k8-acms-dev (ver src/eks/k8-acms-dev-research.md). É o ambiente base, igual
+# ao dev, sem o Argo Rollouts. O Argo Rollouts fica num helmfile separado
+# (argo-rollouts/helmfile.yaml), instalado depois deste.
+#
+# Uso (ver helm-instructions.md):
+#   helmfile -f src/eks/helm/helmfile.yaml diff
+#   helmfile -f src/eks/helm/helmfile.yaml apply
+
+helmDefaults:
+  # Todos os releases vão para este contexto, independente do contexto atual
+  # do kubectl.
+  kubeContext: k8-acms-poc
+  createNamespace: true
+  wait: true
+  timeout: 600
+
+repositories:
+  - name: metrics-server
+    url: https://kubernetes-sigs.github.io/metrics-server/
+  - name: kedacore
+    url: https://kedacore.github.io/charts
+
+templates:
+  poc: &poc
+    hooks:
+      # Trava de segurança: antes de qualquer comando, confere se o contexto
+      # k8-acms-poc aponta mesmo para o cluster k8-acms-poc, para nunca
+      # instalar nada no k8-acms-dev/k8-acms-prod por engano.
+      - events: ["prepare"]
+        showlogs: true
+        command: bash
+        args:
+          - -c
+          - |
+            arn="$(kubectl config view -o jsonpath='{.contexts[?(@.name=="k8-acms-poc")].context.cluster}')"
+            if [[ "$arn" != */k8-acms-poc ]]; then
+              echo "Contexto 'k8-acms-poc' ausente ou apontando para '$arn'. Abortando." >&2
+              exit 1
+            fi
+
+releases:
+  - name: metrics-server
+    <<: *poc
+    namespace: kube-system
+    chart: metrics-server/metrics-server
+    version: 3.14.0 # metrics-server 0.9.0 (versão do dev desconhecida)
+
+  - name: keda
+    <<: *poc
+    namespace: keda
+    chart: kedacore/keda
+    version: 2.19.0 # KEDA 2.19.0, igual ao dev
+    values:
+      - keda/values-dev.yaml
