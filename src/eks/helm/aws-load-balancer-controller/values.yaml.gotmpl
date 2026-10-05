@@ -1,0 +1,26 @@
+# Values para o chart eks/aws-load-balancer-controller, iguais ao release do
+# k8-acms-prod (lido pelo Datadog em 05/10/2026):
+#
+#   chart:    aws-load-balancer-controller-1.13.4 (controller v2.13.4)
+#   réplicas: 2 (default do chart)
+#   args:     --cluster-name, --ingress-class=alb, --aws-region, --aws-vpc-id
+#   auth:     IRSA na service account aws-load-balancer-controller
+#
+# O ARN do role IRSA e o id da VPC vêm dos outputs do Terraform
+# (src/eks/terraform/lb-controller.tf). O vpcId precisa ser explícito: os
+# nodes têm IMDS com hop limit 1, então o controller não consegue descobrir a
+# VPC sozinho.
+#
+# O exec roda no diretório atual, então o caminho do Terraform parte da raiz
+# do repo (git rev-parse), não deste arquivo.
+{{- $tfOutput := "terraform -chdir=\"$(git rev-parse --show-toplevel)/src/eks/terraform\" output -raw" }}
+
+clusterName: k8-acms-poc
+region: us-east-2
+vpcId: {{ exec "sh" (list "-c" (printf "%s vpc_id" $tfOutput)) }}
+
+serviceAccount:
+  create: true
+  name: aws-load-balancer-controller
+  annotations:
+    eks.amazonaws.com/role-arn: {{ exec "sh" (list "-c" (printf "%s aws_load_balancer_controller_role_arn" $tfOutput)) }}

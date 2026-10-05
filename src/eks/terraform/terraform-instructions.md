@@ -4,8 +4,9 @@ Cria o cluster `k8-acms-poc` na conta POC, espelhando o `k8-acms-dev` (ver
 [k8-acms-dev-research.md](../k8-acms-dev-research.md)), com `terraform plan`
 para revisar recurso por recurso antes de criar.
 
-O Terraform cuida só da infraestrutura. Os add-ons (metrics-server, KEDA e
-Argo Rollouts) são instalados depois, via Helm (ver
+O Terraform cuida só da infraestrutura, incluindo o IAM role (IRSA) do AWS
+Load Balancer Controller. Os add-ons (metrics-server, KEDA, AWS Load Balancer
+Controller e Argo Rollouts) são instalados depois, via Helm (ver
 [helm-instructions.md](../helm/helm-instructions.md)). Instalar os charts pelo
 provider `helm` no mesmo `apply` que cria o cluster é uma fonte conhecida de
 problemas, porque o provider precisa do endpoint de um cluster que ainda não
@@ -18,7 +19,11 @@ existe.
 - [terraform.tfvars](terraform.tfvars): **valores** de profile, região, versão do K8s e nodes
 - [vpc.tf](vpc.tf): VPC, 2 AZs, subnets públicas/privadas, 1 NAT Gateway
 - [eks.tf](eks.tf): cluster EKS, add-ons e managed nodegroup
-- [outputs.tf](outputs.tf): nome, versão, endpoint e comando de `update-kubeconfig`
+- [lb-controller.tf](lb-controller.tf): IAM role e policy do AWS Load Balancer Controller (IRSA)
+- [outputs.tf](outputs.tf): nome, versão, endpoint, comando de `update-kubeconfig`,
+  id da VPC e ARN do role do AWS Load Balancer Controller. Os dois últimos são
+  lidos pelo helmfile, então o `terraform.tfstate` precisa estar no repo quando
+  os add-ons forem instalados.
 
 ## O que é criado
 
@@ -36,9 +41,12 @@ existe.
 | Upgrade policy              | `STANDARD`                                               | dev usa `EXTENDED` (ver comentário em [eks.tf](eks.tf)) |
 | Admin do cluster            | quem roda o `apply` (role SSO do `k8-acms-poc`)          | —                                                       |
 | KMS e logs do control plane | desligados                                               | igual ao padrão do eksctl, usado no dev                 |
+| IAM do ALB Controller       | role `k8-acms-poc-aws-load-balancer-controller` (IRSA)   | igual ao prod (lá criado pelo eksctl)                   |
 
-Módulos usados: `terraform-aws-modules/eks/aws` `~> 21.26` e
-`terraform-aws-modules/vpc/aws` `~> 6.7`, com provider AWS `~> 6.67`.
+Módulos usados: `terraform-aws-modules/eks/aws` `~> 21.26`,
+`terraform-aws-modules/vpc/aws` `~> 6.7` e
+`terraform-aws-modules/iam/aws` `~> 6.8` (submódulo
+`iam-role-for-service-accounts`), com provider AWS `~> 6.67`.
 
 ## Passo a passo
 
@@ -68,7 +76,8 @@ terraform plan -out=poc.tfplan
 ```
 
 Revise o plano. Devem aparecer cerca de 50 recursos a criar: VPC, subnets,
-NAT, IAM roles, cluster, add-ons, nodegroup e access entry.
+NAT, IAM roles, cluster, add-ons, nodegroup, access entry e o role/policy do
+AWS Load Balancer Controller.
 
 ### 2. Criar
 
@@ -97,17 +106,26 @@ Com o cluster criado, instale os add-ons seguindo o
 
 ### 4. Destruir
 
-Os releases do Helm não estão no state do Terraform. Antes de destruir,
-remova-os seguindo a seção "Remover" do
-[argo-rollouts-instructions.md](../helm/argo-rollouts-instructions.md#5-remover)
-e do [helm-instructions.md](../helm/helm-instructions.md#5-remover).
+Os releases do Helm e os load balancers criados pelo cluster não estão no
+state do Terraform. Os ALB/ELB e seus security groups bloqueiam a remoção da
+VPC. Antes de destruir, nesta ordem:
 
-Se tiver instalado o ALB Controller, remova antes os Services `LoadBalancer` e
-os Ingress. Os ALB/NLB que ele cria não estão no state do Terraform e
-bloqueiam a remoção da VPC.
+1. Remova os apps de teste (`kubectl delete namespace load-test`, ver o
+   [test-instructions.md](../poc-test/test-instructions.md#cleanup)). Apagar o
+   Ingress faz o AWS Load Balancer Controller apagar o ALB, então o controller
+   precisa estar rodando nessa hora.
+2. Remova o Argo Rollouts e os add-ons base, seguindo a seção "Remover" do
+   [argo-rollouts-instructions.md](../helm/argo-rollouts-instructions.md#5-remover)
+   e do [helm-instructions.md](../helm/helm-instructions.md#5-remover).
 
 ```sh
-kubectl --context k8-acms-poc get svc -A | grep LoadBalancer   # deve estar vazio
+# devem estar vazios
+kubectl --context k8-acms-poc get ingress -A
+kubectl --context k8-acms-poc get svc -A | grep LoadBalancer
+aws elbv2 describe-load-balancers --profile k8-acms-poc --region us-east-2 \
+  --query 'LoadBalancers[].LoadBalancerName'
+aws elb describe-load-balancers --profile k8-acms-poc --region us-east-2 \
+  --query 'LoadBalancerDescriptions[].LoadBalancerName'
 
 cd src/eks/terraform
 terraform destroy

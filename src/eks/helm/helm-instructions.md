@@ -2,13 +2,18 @@
 
 Sobe no cluster `k8-acms-poc`, criado pelo
 [Terraform](../terraform/terraform-instructions.md), os mesmos add-ons que
-existem hoje no `k8-acms-dev`. O resultado é um ambiente igual ao dev, **sem**
-o Argo Rollouts.
+existem hoje no `k8-acms-dev`/`k8-acms-prod`. O resultado é um ambiente igual
+ao dev, **sem** o Argo Rollouts.
 
-| Add-on         | Versão                    | Namespace     |
-| -------------- | ------------------------- | ------------- |
-| metrics-server | `0.9.0` (chart `3.14.0`)  | `kube-system` |
-| KEDA           | `2.19.0` (chart `2.19.0`) | `keda`        |
+| Add-on                       | Versão                     | Namespace     |
+| ---------------------------- | -------------------------- | ------------- |
+| metrics-server               | `0.9.0` (chart `3.14.0`)   | `kube-system` |
+| KEDA                         | `2.19.0` (chart `2.19.0`)  | `keda`        |
+| AWS Load Balancer Controller | `v2.13.4` (chart `1.13.4`) | `kube-system` |
+
+O AWS Load Balancer Controller cria os ALBs dos Ingress com
+`ingressClassName: alb`. A versão e os args são os do release em prod (lidos
+pelo Datadog, ver [values.yaml.gotmpl](aws-load-balancer-controller/values.yaml.gotmpl)).
 
 O Argo Rollouts é instalado depois, por um helmfile separado. Ver
 [argo-rollouts-instructions.md](argo-rollouts-instructions.md).
@@ -19,29 +24,26 @@ O Argo Rollouts é instalado depois, por um helmfile separado. Ver
   a trava de contexto
 - [keda/values-dev.yaml](keda/values-dev.yaml): values do KEDA. O
   metrics-server usa os defaults do chart.
+- [aws-load-balancer-controller/values.yaml.gotmpl](aws-load-balancer-controller/values.yaml.gotmpl):
+  values do AWS Load Balancer Controller. O id da VPC e o ARN do role IRSA
+  vêm do `terraform output`.
 
 ## 1. Pré-requisitos (uma vez)
 
 ```sh
 brew install helm helmfile
-helmfile init   # instala o plugin helm-diff, usado pelo diff e pelo apply
+helmfile init
 helm diff version
 helmfile --version
 ```
 
-No Helm 4, o `helmfile init` baixa o código do `helm-diff`, mas o hook que
-baixa o binário não roda, e o `diff`/`apply` falham com
-`.../helm-diff/bin/diff: no such file or directory`. Nesse caso, rode o hook
-à mão:
+O cluster precisa existir e o contexto `k8-acms-poc` precisa estar no kubeconfig.
+Ver os passos 1 a 3 do [terraform-instructions.md](../terraform/terraform-instructions.md).
 
-```sh
-"$(helm env HELM_PLUGINS)/helm-diff/install-binary.sh"
-helm diff version
-```
-
-O cluster precisa existir e o contexto `k8-acms-poc` precisa estar no
-kubeconfig. Ver os passos 1 a 3 do
-[terraform-instructions.md](../terraform/terraform-instructions.md).
+O release do AWS Load Balancer Controller roda `terraform output` em
+`src/eks/terraform/`. Por isso, rode o helmfile no mesmo checkout em que
+o `terraform apply` foi feito, com o `terraform` instalado. Ele só lê o
+`terraform.tfstate` local, sem precisar de login na AWS.
 
 ## 2. Instalar
 
@@ -59,6 +61,9 @@ helmfile -f src/eks/helm/helmfile.yaml apply   # aplica só o que mudou
   `k8-acms-poc`. Se não apontar, o helmfile aborta sem tocar no cluster, como o
   script fazia.
 - **Namespaces:** `keda` é criado se não existir.
+- **CRDs do ALB Controller:** o release usa `disableValidationOnInstall`.
+  Sem isso, a primeira instalação falha no `helm diff` com
+  `no matches for kind "IngressClassParams"`, porque o CRD ainda não existe.
 - **Espera:** cada release espera os pods ficarem prontos (`wait`, timeout de
   10 min), como o `--wait` do script.
 
@@ -96,6 +101,12 @@ kubectl --context k8-acms-poc get crd scaledobjects.keda.sh \
 # metrics-server respondendo
 kubectl --context k8-acms-poc top nodes
 
+# AWS Load Balancer Controller: 2/2 pods, IngressClass alb e sem erro de IAM
+kubectl --context k8-acms-poc get deploy -n kube-system aws-load-balancer-controller
+kubectl --context k8-acms-poc get ingressclass alb
+kubectl --context k8-acms-poc logs -n kube-system deploy/aws-load-balancer-controller --tail=100 \
+  | grep -iE '"level":"error"|AccessDenied'   # não deve listar nada
+
 # sem Argo Rollouts, como no dev (não deve listar nada)
 kubectl --context k8-acms-poc get crd | grep argoproj.io
 ```
@@ -118,8 +129,16 @@ helm search repo kedacore/keda --versions | head
 Remova antes o Argo Rollouts, se estiver instalado (ver
 [argo-rollouts-instructions.md](argo-rollouts-instructions.md#5-remover)).
 Os releases do Helm não estão no state do Terraform, então remova-os antes do
-`terraform destroy`:
+`terraform destroy`.
+
+Antes, apague todos os Ingress, com o controller ainda rodando. É ele quem
+apaga os ALBs. Sem o controller, o finalizer deixa o Ingress travado e o ALB
+fica órfão na conta, bloqueando o `terraform destroy`.
 
 ```sh
+kubectl --context k8-acms-poc get ingress -A   # deve estar vazio
 helmfile -f src/eks/helm/helmfile.yaml destroy
 ```
+
+O chart do AWS Load Balancer Controller deixa os CRDs `elbv2.k8s.aws` no
+cluster. Eles somem junto com o cluster no `terraform destroy`.

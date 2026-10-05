@@ -1,6 +1,7 @@
-# metrics-server e KEDA no cluster do POC, com as versões alinhadas ao
-# k8-acms-dev (ver src/eks/k8-acms-dev-research.md). É o ambiente base, igual
-# ao dev, sem o Argo Rollouts. O Argo Rollouts fica num helmfile separado
+# metrics-server, KEDA e AWS Load Balancer Controller no cluster do POC, com as
+# versões alinhadas ao k8-acms-dev/k8-acms-prod (ver
+# src/eks/k8-acms-dev-research.md). É o ambiente base, igual ao dev, sem o
+# Argo Rollouts. O Argo Rollouts fica num helmfile separado
 # (argo-rollouts/helmfile.yaml), instalado depois deste.
 #
 # Uso (ver helm-instructions.md):
@@ -20,6 +21,8 @@ repositories:
     url: https://kubernetes-sigs.github.io/metrics-server/
   - name: kedacore
     url: https://kedacore.github.io/charts
+  - name: eks
+    url: https://aws.github.io/eks-charts
 
 templates:
   poc: &poc
@@ -53,3 +56,14 @@ releases:
     version: 2.19.0 # KEDA 2.19.0, igual ao dev
     values:
       - keda/values-dev.yaml
+
+  - name: aws-load-balancer-controller
+    <<: *poc
+    namespace: kube-system
+    chart: eks/aws-load-balancer-controller
+    version: 1.13.4 # controller v2.13.4, igual ao prod
+    # Na primeira instalação o helm-diff valida o IngressClassParams antes de
+    # o CRD (crds/ do chart) existir e falha. Isto desliga só essa validação.
+    disableValidationOnInstall: true
+    values:
+      - aws-load-balancer-controller/values.yaml.gotmpl

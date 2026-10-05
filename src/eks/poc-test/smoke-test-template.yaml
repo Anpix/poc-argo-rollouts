@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: smoke-tests
+spec:
+  args:
+    - name: service-name
+  metrics:
+    - name: smoke-tests
+      provider:
+        job:
+          spec:
+            backoffLimit: 0
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: smoke-tests
+                    image: curlimages/curl:8.10.1
+                    command: ['sh', '-c']
+                    # poc-demo has no readinessProbe (same as prod), so this runs as
+                    # soon as the pods start, while /ready still answers 503:
+                    # retry for up to ~30s before failing the analysis.
+                    args:
+                      - 'curl -sf --retry 30 --retry-delay 1 --retry-all-errors http://{{args.service-name}}/ready'

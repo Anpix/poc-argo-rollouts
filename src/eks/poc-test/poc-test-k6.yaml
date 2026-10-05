@@ -1,0 +1,112 @@
+# Filled in by poc-test-run.sh: sed replaces $JOB_NAME, $TEST_URL, $TIMEOUT,
+# $RATE and $DURATION in the whole file, including the k6 script below, which
+# reads its parameters through __ENV instead.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: poc-test-k6-script
+  namespace: load-test
+data:
+  test.js: |
+    import http from 'k6/http';
+    import { check } from 'k6';
+
+    const rate = Number(__ENV.RATE) || 10;
+
+    export const options = {
+      scenarios: {
+        default: {
+          executor: 'constant-arrival-rate',
+          rate: rate,
+          timeUnit: '1s',
+          duration: __ENV.DURATION || '30s',
+          preAllocatedVUs: rate,
+          maxVUs: rate * 10,
+        },
+      },
+      thresholds: {
+        checks: ['rate==1.0'],
+      },
+    };
+
+    export default function () {
+      const reqStart = new Date().toISOString();
+      const res = http.get(__ENV.TEST_URL, { timeout: __ENV.TIMEOUT });
+
+      const ok = check(res, {
+        'status is 2xx': (r) => r.status >= 200 && r.status < 300,
+      });
+
+      if (!ok) {
+        console.log(JSON.stringify({
+          req_start: reqStart,
+          req_end: new Date().toISOString(),
+          status: res.status,
+          // res.error is empty when the server answered with a non-2xx status;
+          // it's only set for transport failures (connection refused, timeout, TLS...)
+          error: res.error || 'non-2xx response',
+          error_code: res.error_code,
+          body: (res.body || '').slice(0, 200),
+        }));
+        return;
+      }
+
+      // some services return a plain-text body (e.g. a bare version string)
+      // instead of JSON — that's still a successful response, just log it as-is
+      let body;
+      try {
+        body = JSON.parse(res.body);
+      } catch (e) {
+        body = res.body;
+      }
+
+      console.log(JSON.stringify({
+        req_start: reqStart,
+        req_end: new Date().toISOString(),
+        status: res.status,
+        body,
+      }));
+    }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: $JOB_NAME
+  namespace: load-test
+spec:
+  backoffLimit: 0
+  # Keeps the finished job (and its pod logs) for 24h, then deletes it.
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: $JOB_NAME
+        namespace: load-test
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: k6
+          image: grafana/k6:latest
+          # Logs go to the container output, read later with `kubectl logs job/$JOB_NAME`.
+          # --quiet hides the progress bar, so the output is only the request lines + the summary.
+          args: ['run', '--quiet', '--include-system-env-vars', '--log-format=raw', '/scripts/test.js']
+          env:
+            - name: TEST_URL
+              value: '$TEST_URL'
+            - name: TIMEOUT
+              value: '$TIMEOUT'
+            - name: RATE
+              value: '$RATE'
+            - name: DURATION
+              value: '$DURATION'
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 100m
+      volumes:
+        - name: script
+          configMap:
+            name: poc-test-k6-script
