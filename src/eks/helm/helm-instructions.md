@@ -142,3 +142,7 @@ helmfile -f src/eks/helm/helmfile.yaml destroy
 
 O chart do AWS Load Balancer Controller deixa os CRDs `elbv2.k8s.aws` no
 cluster. Eles somem junto com o cluster no `terraform destroy`.
+
+Depois, destrua o cluster. O `terraform destroy` roda em `src/eks/terraform/`,
+onde está o state, e não na raiz do repo. Ver o passo 4 do
+[terraform-instructions.md](../terraform/terraform-instructions.md#4-destruir).
