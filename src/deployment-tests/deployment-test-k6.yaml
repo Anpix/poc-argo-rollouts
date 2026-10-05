@@ -37,8 +37,12 @@ data:
       if (!ok) {
         console.log(JSON.stringify({
           req_start: reqStart,
+          req_end: new Date().toISOString(),
           status: res.status,
-          error: 'non-2xx response',
+          // res.error is empty when the server answered with a non-2xx status;
+          // it's only set for transport failures (connection refused, timeout, TLS...)
+          error: res.error || 'non-2xx response',
+          error_code: res.error_code,
           body: (res.body || '').slice(0, 200),
         }));
         return;
@@ -53,5 +57,10 @@ data:
         body = res.body;
       }
 
-      console.log(JSON.stringify({ req_start: reqStart, status: res.status, body }));
+      console.log(JSON.stringify({
+        req_start: reqStart,
+        req_end: new Date().toISOString(),
+        status: res.status,
+        body,
+      }));
     }
