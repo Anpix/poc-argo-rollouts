@@ -17,7 +17,7 @@ spec:
           image: grafana/k6:latest
           command: ['/bin/sh', '-c']
           args:
-            - k6 run --include-system-env-vars --log-output=file=/logs/$JOB_NAME-$(date +%Y%m%d-%H%M).log /scripts/test.js
+            - k6 run --include-system-env-vars --log-format=raw --log-output=file=/logs/$JOB_NAME-$(date +%Y%m%d-%H%M).log /scripts/test.js
           env:
             - name: TEST_URL
               value: $TEST_URL
